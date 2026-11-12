@@ -1,5 +1,3 @@
 export { collection } from './collection'
 export { entity } from './entity'
-export { Entity } from './classes/Entity'
-export { Collection } from './classes/Collection'
 export { type Identified, type State, type View } from './types'
