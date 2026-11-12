@@ -1,0 +1,87 @@
+export type Key = string | number | boolean | bigint | symbol
+export type PathValue<Row, Path> = Path extends keyof Row
+  ? Row[Path]
+  : Path extends `${infer Head}[${number}]${infer Tail}`
+    ? NonNullable<PathValue<Row, Head>> extends readonly (infer Item)[]
+      ? Tail extends `.${infer Rest}`
+        ? PathValue<Item, Rest>
+        : Tail extends ''
+          ? Item
+          : never
+      : never
+    : Path extends `${infer Head}.${infer Tail}`
+      ? Head extends keyof Row
+        ? PathValue<NonNullable<Row[Head]>, Tail>
+        : never
+      : never
+
+export type Selector<Row> = (row: Readonly<Row>) => Key | null | undefined
+export type Index<Row> =
+  | Selector<Row>
+  | {
+      readonly select?: Selector<Row>
+      readonly unique?: boolean
+    }
+export type Indexes<Row> = Readonly<Record<string, Index<Row>>>
+
+export type IndexKey<Row, Index, Definition> = Definition extends { readonly select: infer Selector }
+  ? IndexKey<Row, Index, Selector>
+  : Definition extends (row: Readonly<Row>) => infer Value
+    ? Extract<Value, Key>
+    : Extract<PathValue<Row, Index>, Key>
+
+export interface View<Item> extends Iterable<Item> {
+  readonly rows: readonly Item[]
+  readonly total: number
+  find(predicate: (item: Item) => boolean): Item | undefined
+  findBy(path: string, value: unknown): Item | undefined
+  matchBy(path: string, pattern: RegExp): Item[]
+}
+
+export interface Source {
+  subscribe(listener: () => void): () => void
+}
+
+export type Relations = Readonly<Record<string, Source>>
+export type Identified<Item> = Item & { readonly _id: string }
+
+export interface State<Row> {
+  readonly _raw: Readonly<Row>
+  readonly _current: Readonly<Row>
+  readonly _previous: Readonly<Row> | undefined
+}
+
+export interface Options<Row extends object, Definitions, Links, Config, Methods, Args extends unknown[], Meta> {
+  readonly cacheBy?: Definitions
+  readonly relations?: Links
+  readonly config?: Config
+  readonly meta?: Meta
+  readonly methods?: Methods
+  readonly load?: (...args: Args) => Promise<readonly Row[]>
+  readonly derive?: (relations: Links) => readonly Identified<Row>[]
+}
+
+export interface CollectionContract<Row extends object, Item, Definitions, Links, Config, Args extends unknown[], Meta>
+  extends View<Item>, Source {
+  readonly relations: Links
+  readonly config: Config
+  readonly meta: Meta
+  readonly loading: boolean
+  readonly ready: boolean
+  readonly error: unknown
+  get(id: string): Item | undefined
+  require(id: string): Item
+  getBy<IndexKeyName extends keyof Definitions & string>(
+    key: IndexKeyName,
+    value: IndexKey<Row, IndexKeyName, Definitions[IndexKeyName]>
+  ): Definitions[IndexKeyName] extends { readonly unique: true } ? Item | undefined : View<Item>
+  add(row: Row): Item
+  upsert(row: Row): Item
+  update(id: string, patch: Partial<Row>): Item
+  rollback(id: string): Item | undefined
+  remove(id: string): Item | undefined
+  set(rows: readonly Row[]): readonly Item[]
+  clear(): void
+  dispose(): void
+  load(...args: Args): Promise<readonly Item[]>
+}
