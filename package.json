@@ -22,6 +22,12 @@
     "class",
     "immutable"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/khalilov/entitymate.git"
+  },
+  "homepage": "https://github.com/khalilov/entitymate#readme",
+  "bugs": "https://github.com/khalilov/entitymate/issues",
   "license": "ISC",
   "author": "Sergey Khalilov <sergey.khalilov@gmail.com>",
   "type": "module",
