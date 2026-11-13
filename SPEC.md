@@ -1,50 +1,58 @@
 # Entitymate
 
-Entitymate — TypeScript-библиотека для упорядоченных коллекций доменных сущностей в памяти. Первый потребитель — Scrappers. Пакет должен одинаково работать на сервере и в браузере.
+Entitymate is a TypeScript library for ordered in-memory collections of domain entities. The package must work the same way on the server and in the browser.
 
-## Сценарии Scrappers
+## Use cases
 
-| Сценарий                            | Что нужно от коллекции                                                                                                    |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Реестр чанков                       | Уникальный ID, поиск по ID и по ключу координат в пределах версии мира, загрузка и проекция записей для манифеста.        |
-| Игроки, игровые объекты и сессии    | Поиск по ID и стабильным вторичным ключам, упорядоченный обход, предсказуемые добавление, замена и удаление.              |
-| Клиентские чанки и удалённые игроки | Поиск, замена и удаление с сохранением идентичности живых объектов. Освобождение ресурсов Three.js остаётся у приложения. |
+| Use case                            | Collection requirements                                                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Chunk registry                      | Unique IDs, lookup by ID and by coordinate key within a world version, loading, and record projection for the manifest. |
+| Players, game objects, and sessions | Lookup by ID and stable secondary keys, ordered iteration, and predictable insertion, replacement, and removal.         |
+| Client chunks and remote players    | Lookup, replacement, and removal with stable object identity. The application releases Three.js resources.              |
 
-FIFO команд движения, очередь рендера и буфер снапшотов имеют собственные правила порядка и времени жизни. Они вне первой версии. Коллекция не управляет файлами, сокетами, GPU-ресурсами и графом Slapflow.
+Movement command FIFOs, render queues, and snapshot buffers have their own ordering and lifetime rules and are outside the first release. The application owns files, sockets, GPU resources, and workflow orchestration.
 
-## Публичный интерфейс
+## Public API
 
-Пакет экспортирует классы `Collection` и `Entity` и короткие фабрики `collection` и `entity`. Коллекция владеет порядком, индексами и загрузкой. Entity хранит снимки и готовит изменение записи, которое коллекция применяет после проверки индексов.
+The package exports the `collection` and `entity` factories. The collection owns order, indexes, and loading. Each entity stores snapshots and prepares record changes. The collection applies those changes after checking the indexes.
 
-`collection(rows, behavior?, options?)` принимает обычные объекты и экземпляры классов. Элемент сохраняет ссылку и прототип. Второй аргумент — фабрика поведения с типизированным контекстом. Чтобы передать только настройки, укажите `undefined` вторым аргументом. Конструктор `Collection` принимает аргументы в том же порядке. `entity({...})` сохраняет дескрипторы пользовательских методов и геттеров. `options.methods` добавляет методы коллекции, `config` хранит прикладные настройки, `relations` передаёт экземпляры других коллекций. `meta` хранит пользовательские метаданные, например настройки интерфейса. Коллекция сохраняет ссылку на `meta` и передаёт её в контекст. Без этой опции значение равно `undefined`.
+`collection(rows, behavior?, options?)` accepts plain objects and class instances and preserves their identity and prototypes. The second argument is a behavior factory with a typed context. Pass `undefined` for behavior when supplying options alone. `entity({...})` preserves method and getter descriptors. `EntityBehavior<ReturnType<typeof factory>>` extracts the behavior type from the factory result. `options.methods` adds collection methods, `config` holds application settings, and `relations` supplies other collection instances. The collection passes `meta` by reference to the context. Use it for application metadata such as UI settings. It defaults to `undefined`.
 
-Коллекция берёт строковый `_id`, затем строковый `id`, иначе генерирует `_id` через Nano ID. Она закрепляет ключ на исходном объекте. Коллекция добавляет ключ как собственное перечислимое поле, недоступное для записи. Для сохранения снимка с ключом приложение формирует `{ ...item._current, _id: item._id }`. `get`, `require`, `update`, `rollback` и `remove` работают по `_id`. `add` отклоняет дубликат. `upsert` обновляет существующую запись на прежней позиции или добавляет новую в конец. `set` задаёт новый порядок, сверяет записи по ключам и сохраняет экземпляры совпавших элементов.
+The collection uses a string `_id` if present, falls back to a string `id`, then generates an ID with Nano ID. It defines `_id` on the original object as an own, enumerable, non-writable property. Persist the snapshot and key as `{ ...item._current, _id: item._id }`. `get`, `require`, `update`, `rollback`, and `remove` use `_id`. `add` rejects duplicates. `upsert` updates a matching record in place or appends a new one. `set` reconciles by key, sets the new order, and preserves matching instances.
 
-`rows` возвращает замороженный массив в порядке коллекции. Итерация, `total` и поиск используют тот же порядок. `get` и `remove` возвращают `undefined` для отсутствующего ключа, `require` и `update` выбрасывают ошибку, а `rollback` возвращает `undefined`, если запись отсутствует или ей нечего откатывать. `clear` эквивалентен `set([])`.
+`rows` returns a frozen array in collection order. Iteration and search follow that order, and `total` counts the rows. `get` and `remove` return `undefined` for a missing key. `require` and `update` throw. `rollback` returns `undefined` if the key is missing or the record has no previous snapshot. `clear` is equivalent to `set([])`.
 
-Входные массивы должны быть плотными. `set`, создание коллекции и загрузка отклоняют повторный `_id`, повторную ссылку на тот же объект и конфликт в уникальном индексе до применения записей и индексов. Совпадение ключа с уже существующей записью используется для сверки. Оно допускается, если ключ встречается во входном массиве один раз.
+Input arrays must be dense. Collection creation, `set`, and loading reject duplicate IDs, repeated object references, and unique-index conflicts before applying changes to rows or indexes. An existing key can appear once in the input and will match the existing record.
 
-## Состояние записи
+`reorder(ids)` takes every current `_id` in the new order. It rejects missing, unknown, and duplicate keys before changing the collection. It preserves instances and snapshots, updates group order, and notifies subscribers. Derived collections reject this operation.
 
-- `_raw` — снимок на момент первого добавления. `_current` — текущие данные. `_previous` — данные перед последним успешным `update` или `upsert`.
-- Снимки читаются как независимые копии собственных перечислимых полей данных. Класс хранит методы в прототипе. Приватное состояние класса остаётся у экземпляра, откат охватывает поля записи. Поля записи должны поддерживать structured clone и допускать изменения через дескрипторы. Прокси и перечислимые аксессоры не входят в контракт. Элемент должен допускать установку метаданных при первом добавлении и принадлежит одной коллекции. Имена `_raw`, `_current`, `_previous` и `collection` зарезервированы для метаданных.
-- `update` применяет поверхностный патч. `rollback` восстанавливает предыдущий снимок и очищает его. `set` и успешный `load` начинают новую историю обновлённых записей.
-- Коллекция проверяет конфликты ключей до изменения данных и индексов. Прямое изменение полей записи обходит историю и индексы. Прикладные методы меняют данные через коллекцию.
+## Record state
 
-## Индексы и поиск
+- `_raw` is the snapshot from first insertion. `_current` is the current snapshot. `_previous` is the snapshot from before the last successful `update` or `upsert`.
+- Reading a snapshot returns an independent copy of the record's own enumerable data properties. Class methods stay on the prototype and private state stays on the instance. Rollback covers record data. Record fields must support structured cloning and updates via property descriptors. The contract excludes proxies and enumerable accessors. The record must accept metadata on first insertion and belongs to one collection. `_raw`, `_current`, `_previous`, and `collection` are reserved metadata names.
+- `update` applies a shallow patch. `rollback` restores and clears the previous snapshot. `set` and successful `load` reset history for replaced records.
+- The collection checks key conflicts before changing data and indexes. Direct writes bypass history and indexes. Use collection operations to change tracked data from application methods.
 
-В `cacheBy` ключ индекса поля — путь Objwalk. Пустой объект `{}` создаёт групповой индекс, а `{ unique: true }` — уникальный. Для составного ключа укажите имя и функцию или объект `{ select, unique: true }`. Селектор получает поля записи и может вычислить составной ключ. Он должен быть чистым и зависеть от полей данных, доступных в снимке при обновлении. Допустимые ключи — строки, числа, логические значения, bigint и символы.
+## Indexes and search
 
-`getBy(key, value)` принимает объявленный путь или имя селектора и значение соответствующего типа. Уникальный индекс возвращает элемент или `undefined`. Групповой возвращает доступное только для чтения представление всех совпадений в порядке коллекции. Пустая группа поддерживает тот же интерфейс. Удерживаемое представление видит изменения состава группы. Индексы сравнивают ключи как `Map`: число и строка различаются, `null` и `undefined` пропускаются.
+In `cacheBy`, use a property path for a field index. `{}` creates a grouped index and `{ unique: true }` creates a unique one. For a computed key, supply a name and a selector function or `{ select, unique: true }`. A selector must be pure and depend only on record fields available in the snapshot during updates. Valid keys are strings, numbers, booleans, bigints, and symbols.
 
-`find`, `findBy` и `matchBy` доступны на коллекции и на группе. `findBy` возвращает первое точное совпадение, `matchBy` — все строки, совпавшие с регулярным выражением. Objwalk читает пути при индексации и поиске, включая вложенные поля и явные индексы массивов. Для неглубокого обхода входных массивов и словаря индексов используется `each` с `shallow: true` и `metadata: false`. `getBy` находит группу по готовому индексу. Поиск внутри группы обходит только её записи.
+`getBy(key, value)` takes a declared path or selector name and a value of the corresponding type. A unique index returns a record or `undefined`. A grouped index returns a live read-only view in collection order. An empty group supports the same interface. Indexes use `Map` equality, so numbers and strings are distinct keys. They skip `null` and `undefined`.
 
-## Связи, загрузка и подписки
+`find`, `findBy`, and `matchBy` work on collections and groups. `findBy` returns the first exact match, and `matchBy` returns every regular-expression match. Indexing and search support nested property paths and explicit array indices. Input arrays and index definitions use `each` with `shallow: true` and `metadata: false`. `getBy` looks up the group in the index. Searches within a group scan only that group's records.
 
-`relations` передаёт связанные коллекции. Геттеры синхронно читают поля живого элемента через `context.row` и данные связанных коллекций через `context.relations`. Метаданные доступны через `context.meta`, сама коллекция — через `context.collection`. В контексте `collection.getBy` возвращает общий тип результата поиска, а вызов `getBy` на типизированном экземпляре коллекции различает уникальный и групповой индекс. Снимки доступны отдельно, когда нужны сохранение или история. `derive` собирает доступное только для чтения представление из элементов связанных коллекций с различными `_id`. Изменение любого источника помечает его индексы для перестроения перед следующим чтением. `dispose` снимает подписки, когда представление больше не нужно.
+## Relations, loading, and subscriptions
 
-Асинхронный `load` получает полный набор строк и применяет его как `set`. `loading` показывает состояние последнего запроса, `ready` — наличие начальных данных или успешной загрузки, включая пустую. При ошибке `error` хранит причину, последний согласованный набор остаётся доступен. Из конкурирующих загрузок применяются данные последнего вызова. Успешный устаревший запрос возвращает текущие строки, а ошибка устаревшего запроса отклоняет только его промис. Если во время него коллекция изменилась локально, загрузка отклоняется. `subscribe` синхронно уведомляет о начале и завершении актуальной загрузки и о применённых изменениях. Метод возвращает функцию отписки. На старте коллекция без загрузчика готова, в том числе с пустым массивом. С загрузчиком пустая коллекция становится готовой после первой успешной загрузки.
+`relations` supplies related collections. Getters synchronously read live record fields through `context.row` and related data through `context.relations`. Use `context.meta` for metadata and `context.collection` for the owning collection. The context's `collection.getBy` returns a general lookup type. Calling `getBy` on the typed collection distinguishes unique indexes from grouped indexes. Use snapshots for persistence and history.
 
-## Приёмка
+`derive` builds a read-only view from related collection items with distinct `_id` values. Changes to any source mark its indexes for rebuilding on the next read. Call `dispose()` to unsubscribe when the view is no longer needed.
 
-Приёмка новой реализации проверяет обычные записи, экземпляры классов, групповой поиск, конфликты уникальности, откат, объединение связанных коллекций и состояние загрузки. Для Scrappers проверяются манифест, составной ключ координат, стабильный ID после перезапуска и массовая загрузка. Пакет собирается в ESM и CJS с декларациями типов. Навык описывает применение коллекции, в том числе из Slapflow action.
+Asynchronous `load` fetches a full set of rows and applies it like `set`. `loading` reflects the latest request. `ready` indicates that initial rows are available or a load has succeeded, even if that load returned an empty array. With no loader, a collection is ready at creation even when empty. With a loader and no initial rows, it becomes ready after the first successful load.
+
+A failed load stores the cause in `error` and leaves the last consistent set of rows available. When loads overlap, only the latest call can apply rows. An older successful request returns the current rows. An older failed request rejects only its own promise. If the collection changes locally during the latest request, the load rejects.
+
+`subscribe` synchronously notifies listeners when the current load starts or ends and when collection changes are applied. It returns an unsubscribe function.
+
+## Acceptance
+
+Verify plain records, class instances, grouped lookup, unique conflicts, rollback, derived collections, and loading state. For a chunk registry, verify manifest projection, composite coordinate keys, stable IDs after a restart, and bulk loading. Build ESM and CJS with type declarations. The skill documents collection use, including calls from workflow actions.

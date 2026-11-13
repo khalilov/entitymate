@@ -47,11 +47,11 @@ The collection uses a supplied string `_id`, falls back to a string `id`, then g
 | `find(predicate)` / `findBy(path, value)` | The first match in a collection or group.                                         |
 | `matchBy(path, regexp)`                   | All records whose string field matches the expression.                            |
 
-Use an Objwalk path such as `details.categoryId` or `items[0].sku` to index a nested field. Use a named selector when the key comes from several fields. Pass the function directly for a grouped index or use `{ select, unique: true }` for a unique one. Unique indexes reject conflicts, while grouped indexes keep every matching record.
+Use a property path such as `details.categoryId` or `items[0].sku` to index a nested field. Use a named selector when the key comes from several fields. Pass the function directly for a grouped index or use `{ select, unique: true }` for a unique one. Unique indexes reject conflicts, while grouped indexes keep every matching record.
 
 ## Change records and undo
 
-`add` appends a new record. `upsert` updates the record with the same `_id` in place or appends it. `set` replaces the membership and order while retaining matching instances. `remove` removes one record and `clear` empties the collection.
+`add` appends a new record. `upsert` updates the record with the same `_id` in place or appends it. `set` replaces the membership and order while retaining matching instances. Use `reorder(ids)` with every current `_id` exactly once to change only the order. Group views follow the new order and rollback history stays available. `remove` removes one record and `clear` empties the collection.
 
 `update` applies a shallow patch and updates the indexes. `rollback` undoes one successful update or upsert. Both keep the instance alive. The record exposes three snapshots:
 
@@ -85,7 +85,58 @@ const products = collection(
 products.require('drill').categoryLabel // 'Category: Tools'
 ```
 
-Use the exported `Collection` class when a domain collection needs its own methods and getters through inheritance. `collection(...)` constructs a `Collection`. The exported `Entity` class owns record snapshots and stages changes. `entity(behavior)` builds the behavior definition used by the collection callback.
+Use `options.methods` for collection methods and getters. Use `EntityBehavior<ReturnType<typeof factory>>` when a type needs just the methods and getters returned by a named behavior factory.
+
+### Apply a domain change with one patch
+
+```ts
+import { collection, entity } from 'entitymate'
+
+type Status = 'pending' | 'completed' | 'cancelled'
+type Operation = { id: string; status: Status; reservedHexIds: string[] }
+
+const rows: Operation[] = [{ id: 'build', status: 'pending', reservedHexIds: ['a1'] }]
+const operations = collection(rows, ({ _id, collection }) =>
+  entity({
+    transition(status: Exclude<Status, 'pending'>) {
+      collection.update(_id, { status, reservedHexIds: [] })
+    },
+  })
+)
+
+operations.require('build').transition('completed')
+operations.rollback('build') // Restores both status and reservations.
+```
+
+### Keep UI resources in behavior
+
+A toast can store its message in the row and hold the DOM node in the behavior closure.
+
+```ts
+import { collection, entity } from 'entitymate'
+
+const toasts = collection([{ id: 'saved', message: 'Saved' }], ({ row }) => {
+  let node: HTMLElement | undefined
+
+  return entity({
+    show(container: HTMLElement) {
+      if (node === undefined) {
+        node = document.createElement('div')
+        node.textContent = row.message
+        container.append(node)
+      }
+    },
+    dismiss() {
+      node?.remove()
+      node = undefined
+    },
+  })
+})
+
+toasts.require('saved').show(document.body)
+```
+
+Snapshots cover row data. The UI owns DOM cleanup and calls `dismiss()` before removing the item.
 
 ## Load and derive collections
 

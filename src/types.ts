@@ -1,3 +1,7 @@
+import { type Entity } from './classes/Entity'
+
+export type EntityBehavior<Definition> = Definition extends Entity<{}, infer Behavior> ? Behavior : never
+
 export type Key = string | number | boolean | bigint | symbol
 export type PathValue<Row, Path> = Path extends keyof Row
   ? Row[Path]
@@ -81,6 +85,7 @@ export interface CollectionContract<Row extends object, Item, Definitions, Links
   rollback(id: string): Item | undefined
   remove(id: string): Item | undefined
   set(rows: readonly Row[]): readonly Item[]
+  reorder(ids: readonly string[]): readonly Item[]
   clear(): void
   dispose(): void
   load(...args: Args): Promise<readonly Item[]>

@@ -318,6 +318,36 @@ export class Collection<
     return this.rows
   }
 
+  reorder(ids: readonly string[]) {
+    const entries = new Map<string, Entry<Row, Behavior>>()
+    const buckets: Buckets<Row, Behavior> = new Map()
+
+    this._ensureWritable()
+    if (ids.length === this._entries.size) {
+      for (const [order, id] of ids.entries()) {
+        const entry = this._entries.get(id)
+
+        if (entry !== undefined && entries.has(id) === false) {
+          const ordered = { ...entry, order }
+
+          entries.set(id, ordered)
+          this._insertKeys(buckets, ordered)
+        } else {
+          throw new Error('Expected each collection _id exactly once')
+        }
+      }
+
+      this._entries = entries
+      this._buckets = buckets
+      this._sequence = entries.size
+      this._changed()
+
+      return this.rows
+    }
+
+    throw new Error('Expected each collection _id exactly once')
+  }
+
   clear() {
     this.set([])
   }

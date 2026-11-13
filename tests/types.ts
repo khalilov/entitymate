@@ -1,4 +1,17 @@
-import { collection, entity } from '../src'
+import { collection, entity, type EntityBehavior } from '../src'
+
+const behavior = () =>
+  entity({
+    get label() {
+      return 'Tools'
+    },
+    setLabel(label: string) {
+      return label.length
+    },
+  })
+const readLabel = ({ label, setLabel }: EntityBehavior<ReturnType<typeof behavior>>) => setLabel(label)
+
+readLabel(collection([{ id: 'tools' }], behavior).require('tools')).toFixed()
 
 const categories = collection([{ id: 'tools', name: 'Tools' }])
 const rows = [{ sku: 'drill', details: { category: { id: 'tools' }, brand: 'Makita' } }]

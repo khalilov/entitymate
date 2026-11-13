@@ -1,7 +1,41 @@
 import { describe, expect, it } from 'vitest'
-import { Collection, Entity, collection, entity } from '../src'
+import { collection, entity } from '../src'
+import { Collection } from '../src/classes/Collection'
+import { Entity } from '../src/classes/Entity'
 
 describe('collection', () => {
+  it('reorders live groups without replacing rows or changing history', () => {
+    const records = collection(
+      [
+        { id: 'a', group: 'tools', count: 1 },
+        { id: 'b', group: 'tools', count: 2 },
+      ],
+      undefined,
+      { cacheBy: { group: {} } }
+    )
+    const a = records.update('a', { count: 3 })
+    const b = records.require('b')
+    const tools = records.getBy('group', 'tools')
+    const orders: string[][] = []
+
+    records.subscribe(() => orders.push(tools.rows.map(({ _id }) => _id)))
+    expect(() => records.reorder(['a'])).toThrow()
+    expect(() => records.reorder(['b', 'missing'])).toThrow()
+    expect(() => records.reorder(['b', 'b'])).toThrow()
+    expect(records.rows).toEqual([a, b])
+    expect(orders).toEqual([])
+
+    expect(records.reorder(['b', 'a'])).toEqual([b, a])
+    expect(records.require('a')).toBe(a)
+    expect(orders).toEqual([['b', 'a']])
+    expect(a._current.count).toBe(3)
+    expect(a._previous?.count).toBe(1)
+    expect(records.rollback('a')).toBe(a)
+    expect(a.count).toBe(1)
+    records.add({ id: 'c', group: 'tools', count: 4 })
+    expect(tools.rows.map(({ _id }) => _id)).toEqual(['b', 'a', 'c'])
+  })
+
   it('keeps ordered groups live through update, rollback, and reload', () => {
     const rows = [
       { id: 'a', sku: '1', details: { category: 'tools', brand: 'Makita' } },
