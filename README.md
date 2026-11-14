@@ -51,6 +51,8 @@ Use a property path such as `details.categoryId` or `items[0].sku` to index a ne
 
 ## Change records and undo
 
+Use `item.belongsTo({ userId, 'meta.colonyId': colonyId })` to test several fields on a live record. Every path must match by strict equality. Empty criteria and paths that resolve to `undefined` return `false`.
+
 `add` appends a new record. `upsert` updates the record with the same `_id` in place or appends it. `set` replaces the membership and order while retaining matching instances. Use `reorder(ids)` with every current `_id` exactly once to change only the order. Group views follow the new order and rollback history stays available. `remove` removes one record and `clear` empties the collection.
 
 `update` applies a shallow patch and updates the indexes. `rollback` undoes one successful update or upsert. Both keep the instance alive. The record exposes three snapshots:
@@ -60,6 +62,10 @@ Use a property path such as `details.categoryId` or `items[0].sku` to index a ne
 - `_previous` holds the data before the last undoable change, if there is one.
 
 For persistence, project the data as `{ ...product._current, _id: product._id }`. Use collection operations to edit tracked fields so snapshots and indexes agree.
+
+`snapshot()` or `snapshot([])` returns independent snapshots keyed by `_id`. Pass a non-empty ID list to copy only matching records. `indexOf(id)` returns the current zero-based row position or `-1`.
+
+`update(id, patch)` applies a shallow patch to several fields in one operation. Use `update(id, 'details.categoryId', 'garden')` to change a single nested field. The path form preserves siblings and creates missing objects or arrays. Either form creates one rollback step.
 
 ## Add behavior and relations
 

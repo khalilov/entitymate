@@ -4,6 +4,81 @@ import { Collection } from '../src/classes/Collection'
 import { Entity } from '../src/classes/Entity'
 
 describe('collection', () => {
+  it('updates a nested path atomically and rolls back created containers', () => {
+    type Row = { id: string; meta: { label: string; samples?: { value: number }[]; owner?: string } }
+
+    const rows: Row[] = [
+      { id: 'a', meta: { label: 'A' } },
+      { id: 'b', meta: { label: 'B', owner: 'taken' } },
+    ]
+    const records = collection(rows, undefined, { cacheBy: { 'meta.owner': { unique: true } } })
+    const item = records.require('a')
+
+    records.update('a', 'meta.samples[0].value', 1)
+    expect(item.meta).toEqual({ label: 'A', samples: [{ value: 1 }] })
+    expect(() => records.update('a', 'meta.owner', 'taken')).toThrow('Duplicate index key')
+    expect(item._previous?.meta).toEqual({ label: 'A' })
+    expect(() => Reflect.apply(records.update, records, ['a', 'meta.label.value', 1])).toThrow('Incompatible')
+    expect(() => Reflect.apply(records.update, records, ['a', 'meta.__proto__.value', 1])).toThrow('Unsafe')
+    expect(() => Reflect.apply(records.update, records, ['a', '_id', 'other'])).toThrow('Reserved')
+    expect(() => Reflect.apply(records.update, records, ['a', 'meta..value', 1])).toThrow('Invalid')
+    records.rollback('a')
+    expect(item.meta).toEqual({ label: 'A' })
+    records.update('a', { meta: { label: 'new', owner: 'free' } })
+    expect(records.getBy('meta.owner', 'free')).toBe(item)
+    records.rollback('a')
+    expect(item.meta).toEqual({ label: 'A' })
+  })
+
+  it('rejects path updates discarded by snapshots without changing history', () => {
+    const records = collection([{ id: 'a', stamp: new Date(0), label: 'before' }])
+    const item = records.update('a', { label: 'after' })
+
+    expect(() => Reflect.apply(records.update, records, ['a', 'stamp.extra', 'lost'])).toThrow('does not survive')
+    expect(() => Reflect.apply(records.update, records, ['a', 'stamp.extra', undefined])).toThrow('does not survive')
+    expect(item._previous?.label).toBe('before')
+    expect(item.stamp).not.toHaveProperty('extra')
+    Reflect.apply(records.update, records, ['a', 'optional', undefined])
+    expect(Object.hasOwn(item, 'optional')).toBe(true)
+  })
+
+  it('snapshots selected keys and reports positions after membership and order changes', () => {
+    const records = collection([{ details: { count: 1 } }])
+    const [first] = records.rows
+    const second = records.add({ details: { count: 2 } })
+    const selected = records.snapshot([first._id, 'missing', first._id])
+
+    expect(selected).toEqual({ [first._id]: { _id: first._id, details: { count: 1 } } })
+    expect(records.snapshot([])).toEqual(records.snapshot())
+    expect(records.snapshot(['constructor']).constructor).toBeUndefined()
+    expect(records.indexOf(second._id)).toBe(1)
+    records.update(first._id, 'details.count', 3)
+    expect(selected[first._id]?.details.count).toBe(1)
+    records.reorder([second._id, first._id])
+    expect(records.indexOf(first._id)).toBe(1)
+    records.remove(second._id)
+    expect(records.indexOf(first._id)).toBe(0)
+    expect(records.indexOf(second._id)).toBe(-1)
+  })
+
+  it('matches all own paths against live data and preserves custom predicates', () => {
+    const records = collection([{ id: 'a', owner: null, cargo: [{ count: 0 }], pending: false }])
+    const item = records.require('a')
+    const custom = collection([{ id: 'b' }], () => entity({ belongsTo: (owner: string) => owner === 'custom' }))
+
+    expect(item.belongsTo({ _id: 'a', owner: null, 'cargo[0].count': 0, pending: false })).toBe(true)
+    expect(item.belongsTo({ id: 'wrong', owner: null })).toBe(false)
+    expect(item.belongsTo({})).toBe(false)
+    expect(Reflect.apply(item.belongsTo, item, [{ '': item }])).toBe(false)
+    expect(Reflect.apply(item.belongsTo, item, [{ '{id}': 'a' }])).toBe(false)
+    expect(Reflect.apply(item.belongsTo, item, [{ 'cargo[1].count': undefined }])).toBe(false)
+    expect(Reflect.apply(item.belongsTo, item, [{ 'cargo.toString': Array.prototype.toString }])).toBe(false)
+    expect(Object.keys(item)).not.toContain('belongsTo')
+    records.update('a', { pending: true })
+    expect(item.belongsTo({ pending: true })).toBe(true)
+    expect(custom.require('b').belongsTo('custom')).toBe(true)
+  })
+
   it('reorders live groups without replacing rows or changing history', () => {
     const records = collection(
       [

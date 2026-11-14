@@ -1,3 +1,4 @@
+import { belongsTo } from '../helpers/belongsTo'
 import { prepareRowChange } from '../helpers/prepareRowChange'
 import { snapshot } from '../helpers/snapshot'
 import { type State } from '../types'
@@ -88,6 +89,10 @@ export class Entity<Row extends object, Behavior extends object = {}> implements
       if (descriptor?.configurable === false || (descriptor === undefined && Object.isExtensible(row) === false)) {
         throw new TypeError(`Cannot attach entity property ${String(key)}`)
       }
+    }
+
+    if ('belongsTo' in row === false && Object.hasOwn(descriptors, 'belongsTo') === false) {
+      metadata.belongsTo = { value: (criteria: object) => belongsTo(row, criteria) }
     }
 
     return () => Object.defineProperties(row, metadata)

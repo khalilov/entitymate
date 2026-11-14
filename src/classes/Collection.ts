@@ -1,7 +1,9 @@
 import { nanoid } from 'nanoid'
-import { each, pick } from 'objwalk'
+import { each, is, pick, set } from 'objwalk'
 import { Entity, type PreparedChange } from './Entity'
 import { createView } from '../helpers/createView'
+import { isFieldPath } from '../helpers/isFieldPath'
+import { snapshot } from '../helpers/snapshot'
 import {
   type CollectionContract,
   type Identified,
@@ -11,12 +13,15 @@ import {
   type View,
   type Key,
   type Options,
+  type Ownership,
+  type PathValue,
   type Relations,
   type Source,
   type State,
 } from '../types'
 
-type Item<Row, Behavior> = Identified<Row & Behavior & State<Row>>
+type Item<Row, Behavior> = Identified<Row & Behavior & State<Row>> &
+  ('belongsTo' extends keyof Row | keyof Behavior ? {} : Ownership<Identified<Row>>)
 
 type Entry<Row, Behavior> = {
   readonly item: Item<Row, Behavior>
@@ -89,6 +94,7 @@ export class Collection<
   private _version = 0
   private _request = 0
   private _rowView?: readonly Item<Row, Behavior>[]
+  private _positions?: Map<string, number>
   private _loading = false
   private _ready: boolean
   private _error: unknown
@@ -199,6 +205,32 @@ export class Collection<
     return this._entries.get(id)?.item
   }
 
+  indexOf(id: string): number {
+    this._refresh()
+    this._positions ??= new Map([...this._entries.keys()].map((key, index) => [key, index]))
+
+    return this._positions.get(id) ?? -1
+  }
+
+  snapshot(ids: readonly string[] = []): Partial<Record<string, Readonly<Identified<Row>>>> {
+    this._refresh()
+
+    const keys = ids.length === 0 ? this._entries.keys() : new Set(ids)
+    const records: Partial<Record<string, Readonly<Identified<Row>>>> = Object.create(null)
+
+    for (const id of keys) {
+      const entry = this._entries.get(id)
+
+      if (entry !== undefined) {
+        const { item } = entry
+
+        records[id] = { ...(item._current ?? snapshot<Row>(item)), _id: id }
+      }
+    }
+
+    return records
+  }
+
   require(id: string) {
     const item = this.get(id)
 
@@ -266,17 +298,49 @@ export class Collection<
       : this._applyUpdate(entry, this._entityFor(entry.item).prepare({ next: row, history: true }))
   }
 
-  update(id: string, patch: Partial<Row>) {
+  update(id: string, patch: Partial<Row>): Item<Row, Behavior>
+  update<Path extends string>(id: string, path: Path, value: NoInfer<PathValue<Row, Path>>): Item<Row, Behavior>
+  update(id: string, patch: Partial<Row> | string, value?: unknown) {
     const entry = this._entries.get(id)
-    const { _id } = patch as { _id?: unknown }
 
     this._ensureWritable()
-    if (_id !== undefined && _id !== id) {
-      throw new TypeError('Cannot change _id')
-    }
-
     if (entry !== undefined) {
-      return this._applyUpdate(entry, this._entityFor(entry.item).prepare({ patch }))
+      const entity = this._entityFor(entry.item)
+
+      if (typeof patch === 'string') {
+        const next = entity._current
+        const [root] = patch.split(/[.\[]/, 1)
+
+        if (['_id', '_raw', '_current', '_previous', 'collection'].includes(root)) {
+          throw new TypeError(`Reserved update path: ${patch}`)
+        }
+        if (isFieldPath(patch) === false) {
+          throw new TypeError(`Invalid update path: ${patch}`)
+        }
+
+        set(next, patch, value, { strict: true })
+
+        const change = entity.prepare({ next, history: true })
+        const { current } = change
+        const preserved =
+          value === undefined
+            ? is(current, patch, 'undefined')
+            : pick(current, patch, { inherited: false }) !== undefined
+
+        if (preserved) {
+          return this._applyUpdate(entry, change)
+        }
+
+        throw new TypeError(`Update path does not survive snapshot: ${patch}`)
+      }
+
+      const { _id } = patch as { _id?: unknown }
+
+      if (_id !== undefined && _id !== id) {
+        throw new TypeError('Cannot change _id')
+      }
+
+      return this._applyUpdate(entry, entity.prepare({ patch }))
     }
 
     throw new Error(`Missing _id: ${id}`)
@@ -583,13 +647,16 @@ export class Collection<
     this._invalidate()
   }
 
-  private _invalidate() {
+  private _invalidate(orderChanged = true) {
     this._rowView = undefined
+    if (orderChanged) {
+      this._positions = undefined
+    }
     this._version += 1
   }
 
-  private _changed() {
-    this._invalidate()
+  private _changed(orderChanged = true) {
+    this._invalidate(orderChanged)
     this._notify()
   }
 
@@ -644,7 +711,7 @@ export class Collection<
     this._removeKeys(entry, removed)
     entry.keys = keys
     this._insertKeys(this._buckets, entry, added)
-    this._changed()
+    this._changed(false)
 
     return entry.item
   }

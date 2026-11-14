@@ -49,6 +49,16 @@ products.require('drill').caption.toUpperCase()
 products.getBy('sku', 'drill')?.category?.name.toUpperCase()
 products.getBy('details.category.id', 'tools').findBy('details.brand', 'Makita')
 products.getBy('brand', 'Makita')
+products.update('drill', 'details.category.id', 'tools')
+// @ts-expect-error Category ID is a string.
+products.update('drill', 'details.category.id', 1)
+// @ts-expect-error Unknown property path.
+products.update('drill', 'details.missing', 'tools')
+products.require('drill').belongsTo({ _id: 'drill', 'details.category.id': 'tools' })
+// @ts-expect-error Unknown property path.
+products.require('drill').belongsTo({ 'details.missing': 'tools' })
+// @ts-expect-error Category ID is a string.
+products.require('drill').belongsTo({ 'details.category.id': 1 })
 // @ts-expect-error Index must be declared.
 products.getBy('missing', 'value')
 // @ts-expect-error SKU is a string.

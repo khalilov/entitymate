@@ -20,6 +20,9 @@ export type PathValue<Row, Path> = Path extends keyof Row
       : never
 
 export type Selector<Row> = (row: Readonly<Row>) => Key | null | undefined
+export type Ownership<Row> = {
+  belongsTo<Path extends string>(criteria: { readonly [Key in Path]: PathValue<Row, Key> }): boolean
+}
 export type Index<Row> =
   | Selector<Row>
   | {
@@ -74,6 +77,8 @@ export interface CollectionContract<Row extends object, Item, Definitions, Links
   readonly ready: boolean
   readonly error: unknown
   get(id: string): Item | undefined
+  indexOf(id: string): number
+  snapshot(ids?: readonly string[]): Partial<Record<string, Readonly<Identified<Row>>>>
   require(id: string): Item
   getBy<IndexKeyName extends keyof Definitions & string>(
     key: IndexKeyName,
@@ -82,6 +87,7 @@ export interface CollectionContract<Row extends object, Item, Definitions, Links
   add(row: Row): Item
   upsert(row: Row): Item
   update(id: string, patch: Partial<Row>): Item
+  update<Path extends string>(id: string, path: Path, value: NoInfer<PathValue<Row, Path>>): Item
   rollback(id: string): Item | undefined
   remove(id: string): Item | undefined
   set(rows: readonly Row[]): readonly Item[]

@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Added
+
+- `item.belongsTo(criteria)` checks top-level and nested fields on the live record using strict equality.
+- `snapshot(ids?)` returns independent snapshots keyed by `_id`. Omit the IDs or pass an empty list to snapshot the entire collection.
+- `indexOf(id)` returns the current zero-based row position or `-1` for an unknown ID.
+- `update(id, path, value)` supports typed nested writes and creates missing containers. Index validation and one-step rollback apply to both path updates and shallow object patches.
+
+### Changed
+
+- Updated the nested path dependency to 1.11.0 and use its strict write mode for path updates.
+
 ## [0.2.0]
 
 ### Added

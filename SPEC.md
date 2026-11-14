@@ -26,12 +26,16 @@ Input arrays must be dense. Collection creation, `set`, and loading reject dupli
 
 `reorder(ids)` takes every current `_id` in the new order. It rejects missing, unknown, and duplicate keys before changing the collection. It preserves instances and snapshots, updates group order, and notifies subscribers. Derived collections reject this operation.
 
+`indexOf(id)` returns the zero-based position in `rows` or `-1` when absent. `snapshot(ids = [])` returns a null-prototype dictionary of independent current snapshots keyed by `_id`, with `_id` included in each value. An empty list selects all records. A non-empty list skips unknown IDs and uses each matching ID once.
+
 ## Record state
 
 - `_raw` is the snapshot from first insertion. `_current` is the current snapshot. `_previous` is the snapshot from before the last successful `update` or `upsert`.
 - Reading a snapshot returns an independent copy of the record's own enumerable data properties. Class methods stay on the prototype and private state stays on the instance. Rollback covers record data. Record fields must support structured cloning and updates via property descriptors. The contract excludes proxies and enumerable accessors. The record must accept metadata on first insertion and belongs to one collection. `_raw`, `_current`, `_previous`, and `collection` are reserved metadata names.
 - `update` applies a shallow patch. `rollback` restores and clears the previous snapshot. `set` and successful `load` reset history for replaced records.
 - The collection checks key conflicts before changing data and indexes. Direct writes bypass history and indexes. Use collection operations to change tracked data from application methods.
+
+`update(id, path, value)` writes one property using dot notation and explicit array indices. Missing parents are created according to the path. An existing parent with value `undefined` throws. Bracket indices require arrays. Incompatible, inherited, and unsafe paths throw. A write also throws if the updated path is absent from the resulting snapshot. Array indices beyond the current length may leave holes. The update validates indexes before applying the change, then records one rollback step. `update(id, patch)` retains its shallow patch semantics.
 
 ## Indexes and search
 
@@ -42,6 +46,8 @@ In `cacheBy`, use a property path for a field index. `{}` creates a grouped inde
 `find`, `findBy`, and `matchBy` work on collections and groups. `findBy` returns the first exact match, and `matchBy` returns every regular-expression match. Indexing and search support nested property paths and explicit array indices. Input arrays and index definitions use `each` with `shallow: true` and `metadata: false`. `getBy` looks up the group in the index. Searches within a group scan only that group's records.
 
 ## Relations, loading, and subscriptions
+
+An attached record exposes `belongsTo(criteria)` as a non-enumerable method. Each own enumerable string key in `criteria` is a property path. All paths must resolve through own properties to defined values strictly equal to the supplied values. Empty criteria, empty paths, and selection syntax return `false`. A `belongsTo` already supplied by the record or its behavior takes precedence.
 
 `relations` supplies related collections. Getters synchronously read live record fields through `context.row` and related data through `context.relations`. Use `context.meta` for metadata and `context.collection` for the owning collection. The context's `collection.getBy` returns a general lookup type. Calling `getBy` on the typed collection distinguishes unique indexes from grouped indexes. Use snapshots for persistence and history.
 
