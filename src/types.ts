@@ -37,9 +37,32 @@ export type IndexKey<Row, Index, Definition> = Definition extends { readonly sel
     ? Extract<Value, Key>
     : Extract<PathValue<Row, Index>, Key>
 
+export interface ResultCacheOptions {
+  readonly cache: string | symbol
+  readonly deps?: readonly unknown[]
+}
+
+export interface SortByOptions<Item> {
+  readonly sortBy?: readonly (readonly [field: keyof Item, direction: 'asc' | 'desc'])[]
+}
+
+export interface MapOrderOptions<Item> extends SortByOptions<Item> {
+  readonly cache?: never
+}
+
+export type CachedMapOptions<Item> = SortByOptions<Item> & ResultCacheOptions
+
 export interface View<Item> extends Iterable<Item> {
   readonly rows: readonly Item[]
   readonly total: number
+  each(visit: (item: Item, id: string, index: number) => void, options?: SortByOptions<Item>): void
+  map<Result>(project: (item: Item, id: string, index: number) => Result, options?: MapOrderOptions<Item>): Result[]
+  map<Result>(
+    project: (item: Item, id: string, index: number) => Result,
+    options: CachedMapOptions<Item>
+  ): readonly Result[]
+  sort(compare: (left: Item, right: Item) => number): Item[]
+  sort(compare: (left: Item, right: Item) => number, options: ResultCacheOptions): readonly Item[]
   find(predicate: (item: Item) => boolean): Item | undefined
   findBy(path: string, value: unknown): Item | undefined
   matchBy(path: string, pattern: RegExp): Item[]

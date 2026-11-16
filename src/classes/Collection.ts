@@ -5,6 +5,7 @@ import { createView } from '../helpers/createView'
 import { isFieldPath } from '../helpers/isFieldPath'
 import { snapshot } from '../helpers/snapshot'
 import {
+  type CachedMapOptions,
   type CollectionContract,
   type Identified,
   type Index,
@@ -12,10 +13,13 @@ import {
   type IndexKey,
   type View,
   type Key,
+  type MapOrderOptions,
   type Options,
   type Ownership,
   type PathValue,
   type Relations,
+  type ResultCacheOptions,
+  type SortByOptions,
   type Source,
   type State,
 } from '../types'
@@ -177,6 +181,40 @@ export class Collection<
 
   [Symbol.iterator]() {
     return this.rows[Symbol.iterator]()
+  }
+
+  each(
+    callback: (item: Item<Row, Behavior>, id: string, index: number) => void,
+    options?: SortByOptions<Item<Row, Behavior>>
+  ): void {
+    this._view.each(callback, options)
+  }
+
+  map<Result>(
+    callback: (item: Item<Row, Behavior>, id: string, index: number) => Result,
+    options?: MapOrderOptions<Item<Row, Behavior>>
+  ): Result[]
+  map<Result>(
+    callback: (item: Item<Row, Behavior>, id: string, index: number) => Result,
+    options: CachedMapOptions<Item<Row, Behavior>>
+  ): readonly Result[]
+  map<Result>(
+    callback: (item: Item<Row, Behavior>, id: string, index: number) => Result,
+    options?: MapOrderOptions<Item<Row, Behavior>> | CachedMapOptions<Item<Row, Behavior>>
+  ): readonly Result[] {
+    return options?.cache === undefined ? this._view.map(callback, options) : this._view.map(callback, options)
+  }
+
+  sort(callback: (left: Item<Row, Behavior>, right: Item<Row, Behavior>) => number): Item<Row, Behavior>[]
+  sort(
+    callback: (left: Item<Row, Behavior>, right: Item<Row, Behavior>) => number,
+    options: ResultCacheOptions
+  ): readonly Item<Row, Behavior>[]
+  sort(
+    callback: (left: Item<Row, Behavior>, right: Item<Row, Behavior>) => number,
+    options?: ResultCacheOptions
+  ): readonly Item<Row, Behavior>[] {
+    return options === undefined ? this._view.sort(callback) : this._view.sort(callback, options)
   }
 
   find(predicate: (item: Item<Row, Behavior>) => boolean) {

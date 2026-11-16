@@ -45,7 +45,14 @@ The collection uses a supplied string `_id`, falls back to a string `id`, then g
 | `getBy(key, value)` on a unique index     | One record or `undefined`.                                                        |
 | `getBy(key, value)` on a grouped index    | A live, read-only view in collection order, including an empty view on a miss.    |
 | `find(predicate)` / `findBy(path, value)` | The first match in a collection or group.                                         |
+| `each((item, id, index) => …)`            | Visits each live entity with its `_id` and zero-based position in the collection or group. |
+| `map((item, id, index) => …)`             | An array of callback results in collection or group order.                         |
+| `sort(compare)`                          | A new array of live entities in comparator order.                                  |
 | `matchBy(path, regexp)`                   | All records whose string field matches the expression.                            |
+
+Pass `{ sortBy: [['createdAt', 'asc'], ['name', 'desc']] }` to `map` or `each` to order the traversal by item fields. The callback index follows that order.
+
+Pass `{ cache: "labels", deps: [locale] }` to `map` or `sort` to reuse a frozen result array until rows or dependencies change. Keep the cache key unique to that computation within the view.
 
 Use a property path such as `details.categoryId` or `items[0].sku` to index a nested field. Use a named selector when the key comes from several fields. Pass the function directly for a grouped index or use `{ select, unique: true }` for a unique one. Unique indexes reject conflicts, while grouped indexes keep every matching record.
 

@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0]
+
+### Added
+
+- `each` and `map` visit live entities in collections and grouped views. Callbacks receive `(item, id, index)`, where `id` is `_id` and `index` is the zero-based position in the traversal.
+- `each` and `map` accept ordered `sortBy` pairs such as `[['createdAt', 'asc'], ['name', 'desc']]` to sort traversal by entity fields.
+- `sort(compare)` returns a new, stably sorted array of live entities from a collection or grouped view.
+- `map` and `sort` accept `{ cache, deps }` to reuse a shallow-frozen result until the rows or dependencies change. Cached `map` also tracks `sortBy` criteria.
+
 ## [0.3.0]
 
 ### Added

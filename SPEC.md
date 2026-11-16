@@ -22,6 +22,14 @@ The collection uses a string `_id` if present, falls back to a string `id`, then
 
 `rows` returns a frozen array in collection order. Iteration and search follow that order, and `total` counts the rows. `get` and `remove` return `undefined` for a missing key. `require` and `update` throw. `rollback` returns `undefined` if the key is missing or the record has no previous snapshot. `clear` is equivalent to `set([])`.
 
+`each((item, id, index) => …)` is synchronous and returns `undefined`. It visits the collection or group membership in the order captured when the call starts. Each callback receives the live entity, its `_id`, and its zero-based position in that order.
+
+`map((item, id, index) => …)` uses the same order and arguments and returns an array of callback results. `sort(compare)` returns a new, stably sorted array of the same live entities. The source order stays intact.
+
+`map` and `each` accept `{ sortBy: [[field, direction], ...] }`. Criteria use top-level item fields and are applied in array order. Ties preserve source order, and the callback index follows the resulting order. Strings compare by code unit. Numbers and bigints compare numerically, and dates use their timestamps. In ascending order, numeric values precede strings. Missing or unsupported values, including invalid dates and `NaN`, sort last in either direction. A cached `map` also checks the criteria by value.
+
+`map(project, { cache, deps? })` and `sort(compare, { cache, deps? })` reuse a shallow-frozen result array for the same operation, view, and string or symbol key while the view’s `rows` reference and dependencies stay the same. Dependencies are compared positionally with `Object.is`. Use one key per computation and include each external input the callback reads in `deps`. Keep the group view returned by `getBy` to reuse its cache. Calls without options return a fresh, mutable array.
+
 Input arrays must be dense. Collection creation, `set`, and loading reject duplicate IDs, repeated object references, and unique-index conflicts before applying changes to rows or indexes. An existing key can appear once in the input and will match the existing record.
 
 `reorder(ids)` takes every current `_id` in the new order. It rejects missing, unknown, and duplicate keys before changing the collection. It preserves instances and snapshots, updates group order, and notifies subscribers. Derived collections reject this operation.

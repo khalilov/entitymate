@@ -4,6 +4,139 @@ import { Collection } from '../src/classes/Collection'
 import { Entity } from '../src/classes/Entity'
 
 describe('collection', () => {
+  it('uses sortBy criteria in declaration order for map and each', () => {
+    const date = new Date(0)
+    const records = collection(
+      [
+        { id: 'a', kind: 'x', name: 'A', date },
+        { id: 'b', kind: 'x', name: 'Z', date: null },
+        { id: 'c', kind: 'x', name: 'Z', date },
+        { id: 'd', kind: 'x', name: 'Z', date },
+      ],
+      undefined,
+      { cacheBy: { kind: {} } }
+    )
+    const group = records.getBy('kind', 'x')
+    const visits: string[] = []
+    const mapped = records.map((_item, id) => id, {
+      cache: 'ids',
+      sortBy: [
+        ['name', 'desc'],
+        ['date', 'asc'],
+      ],
+    })
+
+    expect(mapped).toEqual(['c', 'd', 'b', 'a'])
+    expect(
+      records.map((_item, id) => id, {
+        cache: 'ids',
+        sortBy: [
+          ['name', 'desc'],
+          ['date', 'asc'],
+        ],
+      })
+    ).toBe(mapped)
+    expect(
+      records.map((_item, id) => id, {
+        cache: 'ids',
+        sortBy: [
+          ['date', 'desc'],
+          ['name', 'asc'],
+        ],
+      })
+    ).toEqual(['a', 'c', 'd', 'b'])
+    group.each((_item, id, index) => visits.push(`${index}:${id}`), {
+      sortBy: [
+        ['name', 'desc'],
+        ['date', 'asc'],
+      ],
+    })
+    expect(visits).toEqual(['0:c', '1:d', '2:b', '3:a'])
+    expect(records.map((_item, id) => id)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('caches map and sort per view and key until rows or dependencies change', () => {
+    const records = collection(
+      [
+        { id: 'a', group: 'tools', rank: 2 },
+        { id: 'b', group: 'tools', rank: 1 },
+      ],
+      undefined,
+      { cacheBy: { group: {} } }
+    )
+    const tools = records.getBy('group', 'tools')
+    const key = Symbol('rank')
+    const deps = [1]
+    const mapped = records.map(({ rank }) => rank * deps[0], { cache: key, deps })
+    const sorted = records.sort((left, right) => left.rank - right.rank, { cache: key })
+    const group = tools.map(({ rank }) => rank, { cache: key })
+
+    expect(Object.isFrozen(mapped)).toBe(true)
+    expect(Object.isFrozen(sorted)).toBe(true)
+    expect(Object.isFrozen(sorted[0])).toBe(false)
+    expect(records.map(() => 0, { cache: key, deps: [1] })).toBe(mapped)
+    expect(records.sort(() => 0, { cache: key })).toBe(sorted)
+    expect(tools.map(() => 0, { cache: key })).toBe(group)
+    expect(group).not.toBe(mapped)
+    expect(Object.isFrozen(records.map(({ rank }) => rank))).toBe(false)
+
+    deps[0] = 2
+    expect(records.map(({ rank }) => rank * deps[0], { cache: key, deps })).toEqual([4, 2])
+    records.update('a', { rank: 0 })
+    expect(records.map(({ rank }) => rank * deps[0], { cache: key, deps })).toEqual([0, 2])
+    expect(records.sort((left, right) => left.rank - right.rank, { cache: key })[0]).toBe(records.require('a'))
+    expect(tools.map(({ rank }) => rank, { cache: key })).toEqual([0, 1])
+  })
+
+  it('maps and sorts the collection and its live groups', () => {
+    const records = collection(
+      [
+        { _id: 'a', group: 'tools', rank: 2 },
+        { _id: 'b', group: 'tools', rank: 1 },
+        { _id: 'c', group: 'other', rank: 1 },
+      ],
+      undefined,
+      { cacheBy: { group: {} } }
+    )
+    const tools = records.getBy('group', 'tools')
+    const compare: Parameters<typeof records.sort>[0] = (left, right) => left.rank - right.rank
+    const sorted = records.sort(compare)
+
+    expect(records.map(({ rank }, id, index) => `${index}:${id}:${rank}`)).toEqual(['0:a:2', '1:b:1', '2:c:1'])
+    expect(sorted.map(({ _id }) => _id)).toEqual(['b', 'c', 'a'])
+    expect(sorted[0]).toBe(records.require('b'))
+    expect(tools.sort(compare).map(({ _id }) => _id)).toEqual(['b', 'a'])
+    expect(tools.map(({ rank }, id) => `${id}:${rank}`)).toEqual(['a:2', 'b:1'])
+    records.update('a', { group: 'other' })
+    expect(tools.map((_item, id, index) => `${index}:${id}`)).toEqual(['0:b'])
+  })
+
+  it('visits live entities by _id in collection and group order', () => {
+    const records = collection(
+      [
+        { _id: 'a', id: 'domain-a', group: 'tools' },
+        { _id: 'b', id: 'domain-b', group: 'tools' },
+      ],
+      undefined,
+      { cacheBy: { group: {} } }
+    )
+    const tools = records.getBy('group', 'tools')
+    const visited: string[] = []
+
+    records.reorder(['b', 'a'])
+    expect(
+      records.each((item, id, index) => {
+        expect(item).toBe(records.get(id))
+        visited.push(`${index}:${id}`)
+        records.remove(id)
+      })
+    ).toBeUndefined()
+    expect(visited).toEqual(['0:b', '1:a'])
+    records.add({ _id: 'c', id: 'domain-c', group: 'tools' })
+    tools.each(({ id }, key, index) => visited.push(`${index}:${key}:${id}`))
+    expect(visited).toEqual(['0:b', '1:a', '0:c:domain-c'])
+  })
+
   it('updates a nested path atomically and rolls back created containers', () => {
     type Row = { id: string; meta: { label: string; samples?: { value: number }[]; owner?: string } }
 
